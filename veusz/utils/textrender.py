@@ -20,6 +20,7 @@
 ###############################################################################
 
 import math
+import os
 import re
 
 import numpy as N
@@ -28,6 +29,7 @@ from .. import qtall as qt
 from . import points
 
 from ..helpers import qtmml
+from ..helpers import qtsvg
 from ..helpers import recordpaint
 from ..helpers.qtloops import RotatedRectangle
 
@@ -1267,6 +1269,7 @@ class _Renderer:
 
     def _initText(self, text):
         """Override this to set up renderer with text."""
+        pass
 
     def ensureInBox(self, minx = -32767, maxx = 32767,
                     miny = -32767, maxy = 32767, extraspace = False):
@@ -1577,8 +1580,109 @@ class _MmlRenderer(_Renderer):
 
         return self.calcbounds
 
+class _SvgRenderer(_Renderer):
+    """SVG renderer."""
+
+    def _initText(self, text):
+        """Setup SVG document and draw it in recording paint device."""
+
+        self.error = ''
+        self.size = qt.QSize(1, 1)
+
+        self.svgdoc = doc = qtsvg.QtSvgDocument()
+        try:
+            self.svgdoc.setContent(text)
+        except ValueError as e:
+            self.svgdoc = None
+            self.error = _('Error interpreting SVG: %s\n') % str(e)
+            return
+
+        self.size = doc.size()
+
+    def _getWidthHeight(self):
+        return self.size.width(), self.size.height(), 0
+
+    def render(self):
+        """Render the text."""
+
+        if self.calcbounds is None:
+            self.getBounds()
+
+        p = self.painter
+        p.save()
+        if self.svgdoc is not None:
+            p.translate(self.xi, self.yi)
+            p.rotate(self.angle)
+            # is drawn from bottom of box, not top
+            p.translate(0, -self.size.height())
+            self.svgdoc.paint(p, qt.QPoint(0,0))
+        else:
+            # display an error - must be a better way to do this
+            p.setFont(qt.QFont())
+            p.setPen(qt.QPen(qt.QColor("red")))
+            p.drawText(
+                qt.QRectF(self.xi, self.yi, 200, 200),
+                qt.Qt.AlignLeft | qt.Qt.AlignTop | qt.Qt.TextWordWrap,
+                self.error )
+        p.restore()
+
+        return self.calcbounds
+
+latex_render_state = {
+    "rendered": False, # whether the latex has been rendered
+    "error_msg": None, # error message if there was a problem rendering
+    "text": None, # the original text
+    "fontsize": None, # the font size
+    "svg": None, # the rendered svg
+}
+
+class _LatexRenderer(_SvgRenderer):
+    """Latex formula renderer."""
+
+    def _initText(self, text):
+        import latex2svg
+
+        # get font size
+        ptsize = self.font.pointSizeF()
+        if ptsize < 0:
+            ptsize = self.font.pixelSize() / self.painter.pixperpt
+
+        if not latex_render_state["rendered"] or \
+              latex_render_state["text"] != text or \
+                latex_render_state["fontsize"] != ptsize:
+
+            latex_render_state["rendered"] = True
+            latex_render_state["text"] = text
+            latex_render_state["fontsize"] = ptsize
+            latex_render_state["svg"] = None
+            latex_render_state["error_msg"] = None
+
+            params = latex2svg.default_params
+            params["fontsize"] = 12 # fix
+            params["scale"] = ptsize / 10  # set scale to set font size
+
+            try:
+                out = latex2svg.latex2svg(text, params)
+            except Exception as e:
+                self.svgdoc = None
+                self.error = _('Error interpreting LaTeX: %s\n') % str(e)
+                latex_render_state["error_msg"] = self.error
+                return
+            
+            latex_render_state["svg"] = out["svg"]
+        elif latex_render_state["error_msg"] is not None:
+            self.svgdoc = None
+            self.error = latex_render_state["error_msg"]
+            return
+
+        return _SvgRenderer._initText(self, latex_render_state["svg"])
+
 # identify mathml text
 mml_re = re.compile(r'^\s*<math.*</math\s*>\s*$', re.DOTALL)
+# identify svg text
+scg_re = re.compile(r'^\s*<svg.*</svg\s*>\s*$', re.DOTALL)
+# identity latex text
+latex_re = re.compile(r'^\s*\$.*\$\s*$', re.DOTALL)
 
 def Renderer(painter, font, x, y, text,
              alignhorz = -1, alignvert = -1, angle = 0,
@@ -1603,6 +1707,10 @@ def Renderer(painter, font, x, y, text,
 
     if mml_re.match(text):
         r = _MmlRenderer
+    elif scg_re.match(text):
+        r = _SvgRenderer
+    elif latex_re.match(text):
+        r = _LatexRenderer
     else:
         r = _StdRenderer
 
