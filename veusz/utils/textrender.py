@@ -1583,7 +1583,7 @@ class _MmlRenderer(_Renderer):
 class _SvgRenderer(_Renderer):
     """SVG renderer."""
 
-    def _initText(self, text):
+    def _initText(self, text, scale=1.0):
         """Setup SVG document and draw it in recording paint device."""
 
         self.error = ''
@@ -1597,7 +1597,36 @@ class _SvgRenderer(_Renderer):
             self.error = _('Error interpreting SVG: %s\n') % str(e)
             return
 
-        self.size = doc.size()
+        # We write the svg document to a RecordPaintDevice device
+        # at the same DPI as the screen. We then repaint the output 
+        # to the real device, scaling to make the size correct.
+        # It ensures that the SVG is rendered at the correct size between
+        # different dpi settings.
+
+        screendev = qt.QApplication.desktop()
+        self.record = recordpaint.RecordPaintDevice(
+            1024, 1024, screendev.logicalDpiX(), screendev.logicalDpiY())
+
+        rpaint = qt.QPainter(self.record)
+        # painting code relies on these attributes of the painter
+        rpaint.pixperpt = screendev.logicalDpiY() / 72.
+        rpaint.scaling = 1.0
+
+        # Upscale any drawing by this factor, then scale back when
+        # drawing. We have to do this to get consistent output at
+        # different zoom factors.
+        upscale = 5.
+
+        doc.setResizeFactor(upscale * scale)
+
+        # the output will be painted finally scaled
+        self.drawscale = (
+            self.painter.dpi / screendev.logicalDpiY()
+            / upscale )
+        self.size = doc.size() * self.drawscale
+
+        doc.paint(rpaint, qt.QPoint(0, 0))
+        rpaint.end()
 
     def _getWidthHeight(self):
         return self.size.width(), self.size.height(), 0
@@ -1615,7 +1644,8 @@ class _SvgRenderer(_Renderer):
             p.rotate(self.angle)
             # is drawn from bottom of box, not top
             p.translate(0, -self.size.height())
-            self.svgdoc.paint(p, qt.QPoint(0,0))
+            p.scale(self.drawscale, self.drawscale)
+            self.record.play(p)
         else:
             # display an error - must be a better way to do this
             p.setFont(qt.QFont())
@@ -1628,13 +1658,18 @@ class _SvgRenderer(_Renderer):
 
         return self.calcbounds
 
-latex_render_state = {
-    "rendered": False, # whether the latex has been rendered
-    "error_msg": None, # error message if there was a problem rendering
-    "text": None, # the original text
-    "fontsize": None, # the font size
-    "svg": None, # the rendered svg
-}
+latex_render_state = {}
+"""
+Key: origin text
+Value: 
+    {
+        "error_msg": None, # error message if there was a problem rendering
+        "text": None, # the original text
+        "fontsize": None, # the font size
+        "svg": None, # the rendered svg
+    }
+"""
+
 
 class _LatexRenderer(_SvgRenderer):
     """Latex formula renderer."""
@@ -1647,35 +1682,63 @@ class _LatexRenderer(_SvgRenderer):
         if ptsize < 0:
             ptsize = self.font.pixelSize() / self.painter.pixperpt
 
-        if not latex_render_state["rendered"] or \
-              latex_render_state["text"] != text or \
-                latex_render_state["fontsize"] != ptsize:
+        # 去除 text 两端的空白
+        text = text.strip()
 
-            latex_render_state["rendered"] = True
-            latex_render_state["text"] = text
-            latex_render_state["fontsize"] = ptsize
-            latex_render_state["svg"] = None
-            latex_render_state["error_msg"] = None
+        # 获取 text 的 hash 值并判断其是否在缓存中
+        text_hash = hash(text)
+        text_cache_path =    os.path.join(
+                os.path.expanduser("~"), ".veusz", "latex_render_cache", str(text_hash) + ".svg"
+            )
+
+        
+        if text in latex_render_state:
+            if latex_render_state[text]["error_msg"] is not None:
+                self.svgdoc = None
+                self.error = latex_render_state["error_msg"]
+                return
+            elif latex_render_state[text]["fontsize"] != ptsize:
+                # change font size
+                latex_render_state[text]["fontsize"] = ptsize
+        elif os.path.exists(
+            text_cache_path
+        ):
+            with open(text_cache_path, "r") as f:
+                latex_render_state[text] = {
+                    "error_msg": None,
+                    "text": text,
+                    "fontsize": ptsize,
+                    "svg": f.read(),
+                }
+        else:
+            latex_render_state[text] = {
+                "error_msg": None,
+                "text": text,
+                "fontsize": ptsize,
+                "svg": None,
+            }
 
             params = latex2svg.default_params
             params["fontsize"] = 12 # fix
-            params["scale"] = ptsize / 10  # set scale to set font size
+            params["scale"] = 1.1  # fix
 
             try:
                 out = latex2svg.latex2svg(text, params)
             except Exception as e:
                 self.svgdoc = None
                 self.error = _('Error interpreting LaTeX: %s\n') % str(e)
-                latex_render_state["error_msg"] = self.error
+                latex_render_state[text]["error_msg"] = self.error
                 return
             
-            latex_render_state["svg"] = out["svg"]
-        elif latex_render_state["error_msg"] is not None:
-            self.svgdoc = None
-            self.error = latex_render_state["error_msg"]
-            return
+            latex_render_state[text]["svg"] = out["svg"]
 
-        return _SvgRenderer._initText(self, latex_render_state["svg"])
+            # save to cache
+            os.makedirs(os.path.dirname(text_cache_path), exist_ok=True)
+            with open(text_cache_path, "w") as f:
+                f.write(out["svg"])
+
+        return _SvgRenderer._initText(self, latex_render_state[text]["svg"], 
+                                      scale=latex_render_state[text]["fontsize"] / 10.0)
 
 # identify mathml text
 mml_re = re.compile(r'^\s*<math.*</math\s*>\s*$', re.DOTALL)
