@@ -631,7 +631,7 @@ def _distRatio(match, painter):
 distre_expr = r'''^
  [ ]*                                # optional whitespace
 
- (-?\.?[0-9]+|[0-9]+\.[0-9]*)        # a floating point number
+ (-?\.?[0-9]+|-?[0-9]+\.[0-9]*)        # a floating point number
 
  [ ]*                                # whitespace
 
