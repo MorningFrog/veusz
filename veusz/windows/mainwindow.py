@@ -1288,6 +1288,7 @@ class MainWindow(qt.QMainWindow):
         self.filename = filename
         self.updateTitlebar()
         self.updateStatusbar(_("Opened %s") % filename)
+        self.slotModifiedDoc(False)
 
         # use current directory of file if not using cwd mode
         if not setdb['dirname_usecwd']:
@@ -1389,8 +1390,7 @@ class MainWindow(qt.QMainWindow):
         self.vzactions['file.save'].setEnabled(ismodified)
 
         # enable/disable reloading from saved document
-        self.vzactions['file.reload'].setEnabled(
-            bool(self.filename) and ismodified)
+        self.vzactions['file.reload'].setEnabled(bool(self.filename))
 
     def slotFileClose(self):
         """File close window chosen."""
