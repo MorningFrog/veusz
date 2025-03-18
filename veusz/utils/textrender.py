@@ -1676,6 +1676,7 @@ class _LatexRenderer(_SvgRenderer):
 
     def _initText(self, text):
         import latex2svg
+        import hashlib
 
         # get font size
         ptsize = self.font.pointSizeF()
@@ -1686,12 +1687,11 @@ class _LatexRenderer(_SvgRenderer):
         text = text.strip()
 
         # 获取 text 的 hash 值并判断其是否在缓存中
-        text_hash = hash(text)
-        text_cache_path =    os.path.join(
-                os.path.expanduser("~"), ".veusz", "latex_render_cache", str(text_hash) + ".svg"
-            )
+        text_hash = hashlib.md5(text.encode()).hexdigest()
+        text_cache_path = os.path.join(
+            os.path.expanduser("~"), ".veusz", "latex_render_cache", text_hash + ".svg"
+        )
 
-        
         if text in latex_render_state:
             if latex_render_state[text]["error_msg"] is not None:
                 self.svgdoc = None
