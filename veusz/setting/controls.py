@@ -686,10 +686,12 @@ class DistancePt(Choice):
     """For editing distances with defaults in points."""
 
     points = (
-        '0pt', '0.25pt', '0.5pt', '1pt', '1.5pt', '2pt', '3pt',
-        '4pt', '5pt', '6pt', '8pt', '10pt', '12pt', '14pt', '16pt',
-        '18pt', '20pt', '22pt', '24pt', '26pt', '28pt', '30pt',
-        '34pt', '40pt', '44pt', '50pt', '60pt', '70pt'
+        '0pt', '0.25pt', '-0.25pt', '0.5pt', '-0.5pt', '1pt', '-1pt',
+        '1.5pt', '-1.5pt', '2pt', '-2pt', '3pt', '-3pt', '4pt', '-4pt',
+        '5pt', '-5pt', '6pt', '-6pt', '8pt', '-8pt', '10pt', '-10pt',
+        '12pt', '-12pt', '14pt', '-14pt', '16pt', '-16pt',
+        '20pt', '-20pt', '24pt', '-24pt', '30pt', '-30pt',
+        '40pt', '-40pt', '50pt', '-50pt', '60pt', '-60pt'
     )
 
     def __init__(self, setting, parent, allowauto=False):
