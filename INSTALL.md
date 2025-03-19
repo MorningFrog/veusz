@@ -86,7 +86,7 @@ An example use of a virtual environment to build veusz would be
     $ pip3 install https://github.com/jeremysanders/pyemf3.git [optional, for EMF output]
     $ tar xf veusz-3.5.tar.gz                           [unpack veusz source]
     $ cd veusz-3.5
-    $ pip3 install -v .                                 [build and install veusz from current directory]
+    $ pip3 install -v . --no-build-isolation            [build and install veusz from current directory]
 
 However, for the above to work requires a working Qt5 development
 installation. This can be your Linux distribution's Qt packages,
